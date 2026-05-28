@@ -1,3 +1,5 @@
+import { Message } from "@prisma/client";
+
 export const CHAT_EVENTS = {
   JOIN_CONVERSATION: 'join_conversation',
   LEAVE_CONVERSATION: 'leave_conversation',
@@ -7,6 +9,7 @@ export const CHAT_EVENTS = {
   TYPING_START: 'typing_start',
   TYPING_STOP: 'typing_stop',
   MARK_READ: 'mark_read',
+  TRANSLATE_MESSAGE: 'translate_message',
 } as const;
 
 export const CHAT_EMIT = {
@@ -39,3 +42,7 @@ export interface ChatMessagePayload {
   type: MessageType;
   createdAt: Date;
 }
+
+export type MessageWithTranslation = Message & {
+  isTranslated: boolean;
+};

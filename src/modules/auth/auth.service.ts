@@ -277,4 +277,64 @@ export class AuthService {
 
     return { accessToken, refreshToken };
   }
+
+  // ─── Google OAuth ─────────────────────────────────────────────────────────────
+async validateGoogleUser(profile: {
+  googleId: string;
+  email: string;
+  name: string;
+  avatar: string | null;
+}) {
+  let user = await this.prisma.user.findUnique({
+    where: { email: profile.email },
+  });
+
+  if (!user) {
+    // নতুন user তৈরি করুন
+    user = await this.prisma.user.create({
+      data: {
+        email: profile.email,
+        name: profile.name,
+        avatar: profile.avatar,
+        googleId: profile.googleId,
+        isEmailVerified: true,
+        isActive: true,
+        password: '', // Google user এর password নেই
+      },
+    });
+  } else if (!user.googleId) {
+    // existing user এ googleId update করুন
+    user = await this.prisma.user.update({
+      where: { id: user.id },
+      data: { googleId: profile.googleId },
+    });
+  }
+
+  return user;
+}
+
+async loginWithGoogle(user: any) {
+  const tokens = await this.generateTokens(user.id, user.email, user.role);
+
+  await this.prisma.refreshToken.create({
+    data: {
+      token: tokens.refreshToken,
+      userId: user.id,
+      expiresAt: expiresInMs(SEVEN_DAYS_MS),
+    },
+  });
+
+  await this.prisma.user.update({
+    where: { id: user.id },
+    data: { status: 'ONLINE', lastSeen: new Date() },
+  });
+
+  const { password, resetToken, resetTokenExpiry, emailVerifyToken, ...safe } = user;
+
+  this.logger.log(`Google Login: ${user.email}`);
+  return {
+    message: 'Google login successful',
+    data: { user: safe, ...tokens },
+  };
+}
 }

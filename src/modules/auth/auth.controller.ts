@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
+import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -40,7 +41,6 @@ export class AuthController {
 
   constructor(private readonly authService: AuthService) {}
 
-  // POST /auth/register
   @Public()
   @Throttle({ default: { limit: 3, ttl: 3600000 } })
   @Post('register')
@@ -49,21 +49,17 @@ export class AuthController {
     return this.authService.register(dto);
   }
 
-  // POST /auth/login
   @Public()
   @Throttle({ default: { limit: 5, ttl: 900000 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.login(dto);
-
     res.cookie(REFRESH_COOKIE, result.data.refreshToken, cookieOptions(this.isProd));
-
     const { refreshToken: _, ...data } = result.data;
     return { ...result, data };
   }
 
-  // POST /auth/logout
   @UseGuards(JwtAuthGuard)
   @Post('logout')
   @HttpCode(HttpStatus.OK)
@@ -77,7 +73,6 @@ export class AuthController {
     return this.authService.logout(userId, token);
   }
 
-  // POST /auth/refresh-token
   @Public()
   @UseGuards(RefreshTokenGuard)
   @Post('refresh-token')
@@ -87,14 +82,11 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.authService.refreshTokens(user.id, user.tokenId);
-
     res.cookie(REFRESH_COOKIE, result.data.refreshToken, cookieOptions(this.isProd));
-
     const { refreshToken: _, ...data } = result.data;
     return { ...result, data };
   }
 
-  // POST /auth/forgot-password
   @Public()
   @Throttle({ default: { limit: 3, ttl: 3600000 } })
   @Post('forgot-password')
@@ -103,7 +95,6 @@ export class AuthController {
     return this.authService.forgotPassword(dto.email);
   }
 
-  // POST /auth/reset-password
   @Public()
   @Throttle({ default: { limit: 5, ttl: 3600000 } })
   @Post('reset-password')
@@ -112,7 +103,6 @@ export class AuthController {
     return this.authService.resetPassword(dto.token, dto.newPassword);
   }
 
-  // PATCH /auth/change-password
   @UseGuards(JwtAuthGuard)
   @Patch('change-password')
   @HttpCode(HttpStatus.OK)
@@ -120,7 +110,6 @@ export class AuthController {
     return this.authService.changePassword(userId, dto);
   }
 
-  // GET /auth/verify-email?token=xxx
   @Public()
   @Get('verify-email')
   @HttpCode(HttpStatus.OK)
@@ -128,12 +117,34 @@ export class AuthController {
     return this.authService.verifyEmail(token);
   }
 
-  // GET /auth/me
   @UseGuards(JwtAuthGuard)
   @SkipThrottle()
   @Get('me')
   @HttpCode(HttpStatus.OK)
   getMe(@CurrentUser('id') userId: string) {
     return this.authService.getMe(userId);
+  }
+
+  // ==========================================
+  // 🌟 GOOGLE OAUTH
+  // ==========================================
+
+  @Public()
+  @Get('google')
+  @UseGuards(AuthGuard('google'))
+  googleAuth() {}
+
+  @Public()
+  @Get('google/callback')
+  @UseGuards(AuthGuard('google'))
+  async googleCallback(
+    @CurrentUser() user: any,
+    @Res() res: Response,
+  ) {
+    const result = await this.authService.loginWithGoogle(user);
+    res.cookie(REFRESH_COOKIE, result.data.refreshToken, cookieOptions(this.isProd));
+    res.redirect(
+      `${process.env.CLIENT_URL}/auth/callback?token=${result.data.accessToken}`,
+    );
   }
 }

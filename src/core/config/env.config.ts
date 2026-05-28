@@ -1,3 +1,4 @@
+// src/env.config.ts
 import { plainToInstance } from 'class-transformer';
 import {
   IsEnum,
@@ -77,6 +78,11 @@ class EnvironmentVariables {
 
   @IsString()
   CLOUDINARY_API_SECRET: string;
+
+  // ─── LibreTranslate URL ভ্যালিডেশন ───
+  @IsString()
+  @IsOptional()
+  LIBRETRANSLATE_URL: string = 'http://localhost:5000';
 }
 
 export function envValidation(config: Record<string, unknown>) {
@@ -87,7 +93,15 @@ export function envValidation(config: Record<string, unknown>) {
   const errors = validateSync(validated, { skipMissingProperties: false });
 
   if (errors.length > 0) {
-    throw new Error(`❌ Env validation failed:\n${errors.toString()}`);
+    // errors.toString() এর বদলে প্রফেশনাল ফরমেটে এরর মেসেজ জেনারেট করা হয়েছে
+    const errorDetails = errors
+      .map((err) => {
+        const constraints = err.constraints ? Object.values(err.constraints).join(', ') : 'Unknown error';
+        return `- ${err.property}: ${constraints}`;
+      })
+      .join('\n');
+
+    throw new Error(`\n❌ Env validation failed:\n${errorDetails}\n`);
   }
 
   return validated;

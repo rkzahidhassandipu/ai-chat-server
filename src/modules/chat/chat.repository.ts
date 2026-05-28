@@ -6,6 +6,26 @@ import { MessageType } from '@prisma/client';
 export class ChatRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  // 1. ডাটাবেজ থেকে ইনবক্স বা কনভারসেশন লিস্ট তুলে আনার মেথড
+  async getUserConversations(userId: string) {
+    return this.prisma.conversation.findMany({
+      where: {
+        members: { some: { userId } },
+      },
+      include: {
+        members: {
+          include: {
+            user: { select: { id: true, name: true, avatar: true, status: true, lastSeen: true } },
+          },
+        },
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+  }
+
   async findPrivateConversation(userId1: string, userId2: string) {
     return this.prisma.conversation.findFirst({
       where: {
@@ -21,7 +41,11 @@ export class ChatRepository {
             user: { select: { id: true, name: true, avatar: true, status: true } },
           },
         },
-        messages: { orderBy: { createdAt: 'desc' }, take: 1 },
+        messages: { 
+          orderBy: { createdAt: 'desc' }, 
+          take: 1,
+          include: { translations: true }
+        },
       },
     });
   }
@@ -65,44 +89,22 @@ export class ChatRepository {
     });
   }
 
-  async getUserConversations(userId: string) {
-    return this.prisma.conversation.findMany({
-      where: { members: { some: { userId } } },
-      include: {
-        members: {
-          include: {
-            user: {
-              select: { id: true, name: true, avatar: true, status: true, lastSeen: true },
-            },
-          },
-        },
-        messages: {
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-          include: { sender: { select: { id: true, name: true } } },
-        },
-      },
-      orderBy: { updatedAt: 'desc' },
-    });
-  }
-
   async isConversationMember(conversationId: string, userId: string): Promise<boolean> {
-  // Defensive check to handle empty/undefined values gracefully
-  if (!conversationId || !userId) {
-    return false; 
-  }
+    if (!conversationId || !userId) {
+      return false; 
+    }
 
-  const member = await this.prisma.conversationMember.findUnique({
-    where: {
-      conversationId_userId: {
-        userId: userId,
-        conversationId: conversationId, // Ensure this isn't undefined
+    const member = await this.prisma.conversationMember.findUnique({
+      where: {
+        conversationId_userId: {
+          userId: userId,
+          conversationId: conversationId,
+        },
       },
-    },
-  });
+    });
 
-  return !!member;
-}
+    return !!member;
+  }
 
   async createMessage(
     conversationId: string,
@@ -110,20 +112,17 @@ export class ChatRepository {
     content: string,
     type: MessageType = 'TEXT',
   ) {
-    const message = await this.prisma.message.create({
-      data: { conversationId, senderId, content, type },
+    return this.prisma.message.create({
+      data: {
+        conversationId,
+        senderId,
+        content,
+        type,
+      },
       include: {
         sender: { select: { id: true, name: true, avatar: true } },
-        readReceipts: true,
       },
     });
-
-    await this.prisma.conversation.update({
-      where: { id: conversationId },
-      data: { updatedAt: new Date() },
-    });
-
-    return message;
   }
 
   async getMessages(conversationId: string, cursor?: string, take = 30) {
@@ -131,6 +130,7 @@ export class ChatRepository {
       where: { conversationId, isDeleted: false },
       include: {
         sender: { select: { id: true, name: true, avatar: true } },
+        translations: true,
         readReceipts: {
           include: { user: { select: { id: true, name: true } } },
         },
@@ -209,12 +209,40 @@ export class ChatRepository {
     return members.map((m) => m.userId);
   }
 
-
   async getConversationMemberIds(conversationId: string): Promise<string[]> {
-  const members = await this.prisma.conversationMember.findMany({
-    where: { conversationId },
-    select: { userId: true },
-  });
-  return members.map((m) => m.userId);
-}
+    const members = await this.prisma.conversationMember.findMany({
+      where: { conversationId },
+      select: { userId: true },
+    });
+    return members.map((m) => m.userId);
+  }
+
+  async findMessageById(messageId: string) {
+    return this.prisma.message.findUnique({
+      where: { id: messageId },
+    });
+  }
+
+  async getMessagesByConversationId(conversationId: string) {
+    return this.prisma.message.findMany({
+      where: { conversationId },
+      include: {
+        sender: {
+          select: { id: true, name: true, avatar: true }
+        },
+        translations: true, 
+      },
+      orderBy: { createdAt: 'asc' } 
+    });
+  }
+
+  // യൂസরের পছন্দের ভাষা জানার মেথড
+  async getUserPreferredLanguage(userId: string): Promise<string> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { preferredLanguage: true },
+    });
+    
+    return user?.preferredLanguage || 'en';
+  }
 }

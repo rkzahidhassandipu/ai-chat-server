@@ -9,6 +9,7 @@ import { ChatRepository } from './chat.repository';
 import { DatabaseModule } from '@core/database/prisma.module';
 import { NOTIFICATION_QUEUE } from './queues/notification.queue';
 import { NotificationProcessor } from './queues/notification.processor';
+import { TranslationService } from './translation.service';
 
 @Module({
   imports: [
@@ -24,7 +25,13 @@ import { NotificationProcessor } from './queues/notification.processor';
     }),
   ],
   controllers: [ChatController],
-  providers: [ChatGateway, ChatService, ChatRepository, NotificationProcessor],
+  providers: [
+    ChatGateway,
+    ChatService,
+    ChatRepository,
+    NotificationProcessor,
+    TranslationService,
+  ],
   exports: [ChatGateway, ChatService, JwtModule],
 })
 export class ChatModule {}

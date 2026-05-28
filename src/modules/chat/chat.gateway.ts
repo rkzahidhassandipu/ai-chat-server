@@ -10,13 +10,12 @@ import {
   WsException,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { 
-  BadRequestException, 
-  Logger, 
-  UsePipes, 
-  PipeTransform, 
-  Injectable, 
-  ArgumentMetadata 
+import {
+  Logger,
+  UsePipes,
+  PipeTransform,
+  Injectable,
+  ArgumentMetadata,
 } from '@nestjs/common';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
@@ -40,7 +39,7 @@ interface AuthenticatedSocket extends Socket {
 @Injectable()
 export class CustomWSValidationPipe implements PipeTransform {
   async transform(value: any, { metatype }: ArgumentMetadata) {
-    if (!metatype || !this.toValidate(metatype)) {
+    if (!value || !metatype || this.isSocket(value) || !this.toValidate(metatype)) {
       return value;
     }
 
@@ -58,20 +57,18 @@ export class CustomWSValidationPipe implements PipeTransform {
     const errors = await validate(object);
 
     if (errors.length > 0) {
-      // console.log('WS Validation Errors:', JSON.stringify(errors, null, 2));
-      
-      const formattedErrors = errors.map(err => ({
+      const formattedErrors = errors.map((err) => ({
         property: err.property,
         errors: Object.values(err.constraints || {}),
       }));
-      
+
       throw new WsException({
         status: 'validation_error',
         message: 'Validation failed',
         errors: formattedErrors,
       });
     }
-    
+
     return object;
   }
 
@@ -80,12 +77,14 @@ export class CustomWSValidationPipe implements PipeTransform {
     return !types.includes(metatype);
   }
 
+  private isSocket(value: any): boolean {
+    return value && value.nsp && value.client && value.conn;
+  }
 }
 
 // ==========================================
 // 💬 CHAT GATEWAY IMPLEMENTATION
 // ==========================================
-@UsePipes(new CustomWSValidationPipe()) 
 @WebSocketGateway({ transports: ['websocket', 'polling'] })
 export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
@@ -102,9 +101,9 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
   async handleConnection(client: AuthenticatedSocket) {
     const user = client.data?.user;
-    if (!user) { 
-      client.disconnect(); 
-      return; 
+    if (!user) {
+      client.disconnect();
+      return;
     }
 
     if (!this.userSockets.has(user.id)) {
@@ -116,8 +115,8 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     const partnerIds = await this.chatService.setUserOnline(user.id);
     partnerIds.forEach((partnerId) => {
       this.server.to(`user:${partnerId}`).emit(CHAT_EMIT.USER_ONLINE, {
-        userId: user.id, 
-        name: user.name, 
+        userId: user.id,
+        name: user.name,
         avatar: user.avatar,
       });
     });
@@ -135,7 +134,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         const partnerIds = await this.chatService.setUserOffline(user.id);
         partnerIds.forEach((partnerId) => {
           this.server.to(`user:${partnerId}`).emit(CHAT_EMIT.USER_OFFLINE, {
-            userId: user.id, 
+            userId: user.id,
             lastSeen: new Date(),
           });
         });
@@ -143,9 +142,10 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     }
   }
 
+  @UsePipes(new CustomWSValidationPipe())
   @SubscribeMessage(CHAT_EVENTS.JOIN_CONVERSATION)
   async handleJoinConversation(
-    @MessageBody() dto: JoinRoomDto, // পাইপের কারণে এখন সরাসরি স্ট্রংলি টাইপড DTO ব্যবহার করা যাবে
+    @MessageBody() dto: JoinRoomDto,
     @ConnectedSocket() client: AuthenticatedSocket,
   ) {
     if (!dto?.conversationId) {
@@ -167,6 +167,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     client.emit('joined', { conversationId: dto.conversationId });
   }
 
+  @UsePipes(new CustomWSValidationPipe())
   @SubscribeMessage(CHAT_EVENTS.LEAVE_CONVERSATION)
   async handleLeaveConversation(
     @MessageBody() dto: JoinRoomDto,
@@ -176,31 +177,27 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     return { event: 'left', data: { conversationId: dto.conversationId } };
   }
 
-  @SubscribeMessage(CHAT_EVENTS.SEND_MESSAGE)
+  @UsePipes(new CustomWSValidationPipe())
+  @SubscribeMessage('send_message') 
   async handleSendMessage(
-    @MessageBody() dto: SendMessageDto,
     @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: SendMessageDto, 
   ) {
-    try {
-      // DTO থেকে টাইপ অ্যাসাইন করুন, না থাকলে 'TEXT'
-      const messageType = dto.type || 'TEXT';
+    const userId = client.data.user.id;
 
-      const message = await this.chatService.sendMessage(
-        dto.conversationId, 
-        client.data.user.id, 
-        dto.content, 
-        messageType,
-      );
+    const message = await this.chatService.sendMessage(
+      data.conversationId,
+      userId,
+      data.content,
+      data.type,
+    );
 
-      // রুমে থাকা সবাইকে ব্রডকাস্ট করুন
-      this.server.to(`conversation:${dto.conversationId}`).emit(CHAT_EMIT.NEW_MESSAGE, message);
-      
-      return { event: 'message_sent', data: message };
-    } catch (error) {
-      client.emit(CHAT_EMIT.ERROR, { message: error.message });
-    }
+    this.server.to(`conversation:${data.conversationId}`).emit('new_message', message);
+
+    return message;
   }
 
+  @UsePipes(new CustomWSValidationPipe())
   @SubscribeMessage(CHAT_EVENTS.EDIT_MESSAGE)
   async handleEditMessage(
     @MessageBody() dto: EditMessageDto,
@@ -208,11 +205,13 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   ) {
     try {
       const message = await this.chatService.editMessage(
-        dto.messageId, 
-        client.data.user.id, 
+        dto.messageId,
+        client.data.user.id,
         dto.content,
       );
-      this.server.to(`conversation:${message.conversationId}`).emit(CHAT_EMIT.MESSAGE_EDITED, message);
+      this.server
+        .to(`conversation:${message.conversationId}`)
+        .emit(CHAT_EMIT.MESSAGE_EDITED, message);
       return { event: 'message_edited', data: message };
     } catch (error) {
       client.emit(CHAT_EMIT.ERROR, { message: error.message });
@@ -220,27 +219,26 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   }
 
   @SubscribeMessage(CHAT_EVENTS.DELETE_MESSAGE)
-async handleDeleteMessage(
-  @MessageBody() body: any,
-  @ConnectedSocket() client: AuthenticatedSocket,
-) {
-  try {
-    const dto = this.parseBody(body);
-    const message = await this.chatService.deleteMessage(dto.messageId, client.data.user.id);
-    this.server.to(`conversation:${message.conversationId}`).emit(CHAT_EMIT.MESSAGE_DELETED, {
-      messageId: dto.messageId,
-      conversationId: message.conversationId,
-    });
-    client.emit('message_deleted', { messageId: dto.messageId });
-  } catch (error) {
-    client.emit(CHAT_EMIT.ERROR, { message: error.message });
-  }
-}
-  @SubscribeMessage(CHAT_EVENTS.TYPING_START)
-  handleTypingStart(
-    @MessageBody() dto: TypingDto,
+  async handleDeleteMessage(
+    @MessageBody() body: any,
     @ConnectedSocket() client: AuthenticatedSocket,
   ) {
+    try {
+      const dto = this.parseBody(body);
+      const message = await this.chatService.deleteMessage(dto.messageId, client.data.user.id);
+      this.server.to(`conversation:${message.conversationId}`).emit(CHAT_EMIT.MESSAGE_DELETED, {
+        messageId: dto.messageId,
+        conversationId: message.conversationId,
+      });
+      client.emit('message_deleted', { messageId: dto.messageId });
+    } catch (error) {
+      client.emit(CHAT_EMIT.ERROR, { message: error.message });
+    }
+  }
+
+  @UsePipes(new CustomWSValidationPipe())
+  @SubscribeMessage(CHAT_EVENTS.TYPING_START)
+  handleTypingStart(@MessageBody() dto: TypingDto, @ConnectedSocket() client: AuthenticatedSocket) {
     client.to(`conversation:${dto.conversationId}`).emit(CHAT_EMIT.USER_TYPING, {
       conversationId: dto.conversationId,
       userId: client.data.user.id,
@@ -248,17 +246,16 @@ async handleDeleteMessage(
     });
   }
 
+  @UsePipes(new CustomWSValidationPipe())
   @SubscribeMessage(CHAT_EVENTS.TYPING_STOP)
-  handleTypingStop(
-    @MessageBody() dto: TypingDto,
-    @ConnectedSocket() client: AuthenticatedSocket,
-  ) {
+  handleTypingStop(@MessageBody() dto: TypingDto, @ConnectedSocket() client: AuthenticatedSocket) {
     client.to(`conversation:${dto.conversationId}`).emit(CHAT_EMIT.USER_STOP_TYPING, {
       conversationId: dto.conversationId,
       userId: client.data.user.id,
     });
   }
 
+  @UsePipes(new CustomWSValidationPipe())
   @SubscribeMessage(CHAT_EVENTS.MARK_READ)
   async handleMarkRead(
     @MessageBody() dto: MarkReadDto,
@@ -277,6 +274,43 @@ async handleDeleteMessage(
     }
   }
 
+  // ==========================================
+  // 🌟 TRANSLATE MESSAGE IMPLEMENTATION (UPDATED)
+  // ==========================================
+  @UsePipes(new CustomWSValidationPipe())
+  @SubscribeMessage(CHAT_EVENTS.TRANSLATE_MESSAGE)
+  async handleTranslateMessage(
+    @MessageBody() dto: any,
+    @ConnectedSocket() client: AuthenticatedSocket,
+  ) {
+    try {
+      const data = typeof dto === 'string' ? JSON.parse(dto) : dto;
+
+      if (!data?.messageId || !data?.targetLanguage) {
+        this.logger.error(`[Translate] Missing fields. MessageId: ${data?.messageId}, Lang: ${data?.targetLanguage}`);
+        client.emit(CHAT_EMIT.ERROR, { message: 'messageId and targetLanguage are required' });
+        return;
+      }
+
+      const translatedData = await this.chatService.translateMessage(
+        data.messageId,
+        data.targetLanguage,
+        client.data.user.id,
+      );
+
+      client.emit('message_translated', {
+        messageId: data.messageId,
+        targetLanguage: data.targetLanguage,
+        translatedContent: translatedData.translatedContent,
+      });
+
+      this.logger.log(`[Translate] Successfully translated message ${data.messageId} to ${data.targetLanguage}`);
+    } catch (error) {
+      this.logger.error(`[Translate] Error: ${error.message}`);
+      client.emit(CHAT_EMIT.ERROR, { message: error.message });
+    }
+  }
+
   emitToUser(userId: string, event: string, data: any) {
     this.server.to(`user:${userId}`).emit(event, data);
   }
@@ -286,7 +320,7 @@ async handleDeleteMessage(
   }
 
   private parseBody(body: any): any {
-  const raw = Array.isArray(body) ? body[0] : body;
-  return typeof raw === 'string' ? JSON.parse(raw) : raw;
-}
+    const raw = Array.isArray(body) ? body[0] : body;
+    return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  }
 }
