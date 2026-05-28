@@ -3,7 +3,7 @@ import { registerAs } from '@nestjs/config';
 export const AppConfig = registerAs('app', () => ({
   port: parseInt(process.env.PORT, 10) || 5000,
   nodeEnv: process.env.NODE_ENV || 'development',
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
+  clientUrl: process.env.CLIENT_URL || 'https://ai-chat-client-vkh3.onrender.com',
   apiPrefix: process.env.API_PREFIX || 'api/v1',
   isProduction: process.env.NODE_ENV === 'production',
 
