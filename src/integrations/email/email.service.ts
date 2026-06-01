@@ -44,7 +44,7 @@ export class EmailService {
   // ─── Templates ───────────────────────────────────────────────────────────────
 
   async sendPasswordReset(email: string, token: string): Promise<void> {
-    const clientUrl = this.configService.get<string>('CLIENT_URL', 'https://ai-chat-client-vkh3.onrender.com');
+    const clientUrl = this.configService.get<string>('CLIENT_URL', 'http://localhost:3000');
     const resetUrl = `${clientUrl}/reset-password?token=${token}`;
 
     await this.sendMail({
@@ -55,7 +55,7 @@ export class EmailService {
   }
 
   async sendEmailVerification(email: string, token: string): Promise<void> {
-    const clientUrl = this.configService.get<string>('CLIENT_URL', 'https://ai-chat-client-vkh3.onrender.com');
+    const clientUrl = this.configService.get<string>('CLIENT_URL', 'http://localhost:3000');
     const verifyUrl = `${clientUrl}/verify-email?token=${token}`;
 
     await this.sendMail({

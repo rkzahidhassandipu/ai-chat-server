@@ -64,7 +64,7 @@ class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
-  CLIENT_URL: string = 'https://ai-chat-client-vkh3.onrender.com';
+  CLIENT_URL: string = 'http://localhost:3000';
 
   @IsString()
   @IsOptional()
