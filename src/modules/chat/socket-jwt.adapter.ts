@@ -20,7 +20,7 @@ export class SocketIoJwtAdapter extends IoAdapter {
   createIOServer(port: number, options?: ServerOptions) {
     const clientUrl = this.configService.get<string>(
       'CLIENT_URL',
-      'https://ai-chat-client-vkh3.onrender.com',
+      'https://ai-chat-client-ew1l.onrender.com',
     );
 
     const server = super.createIOServer(port, {
