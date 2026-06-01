@@ -18,12 +18,19 @@ export class SocketIoJwtAdapter extends IoAdapter {
   }
 
   createIOServer(port: number, options?: ServerOptions) {
+    const clientUrl = this.configService.get<string>(
+      'CLIENT_URL',
+      'https://ai-chat-client-vkh3.onrender.com',
+    );
+
     const server = super.createIOServer(port, {
       ...options,
       cors: {
-        origin: '*',
+        origin: clientUrl,
         credentials: true,
         methods: ['GET', 'POST'],
+        allowedHeaders: ['Content-Type', 'Authorization'],
+        exposedHeaders: ['Set-Cookie'],
       },
     });
 
