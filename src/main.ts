@@ -21,7 +21,7 @@ async function bootstrap() {
   const port = configService.get<number>('PORT', 5000);
   const clientUrl = configService.get<string>(
     'CLIENT_URL',
-    'http://localhost:3000',
+    'https://ai-chat-client-vkh3.onrender.com',
   );
   const apiPrefix = configService.get<string>('API_PREFIX', 'api/v1');
   const nodeEnv = configService.get<string>('NODE_ENV', 'production');
@@ -85,8 +85,8 @@ async function bootstrap() {
   // ─── 5. CORS ──────────────────────────────────────────────────────────────
   app.enableCors({
     origin: [
-      'http://localhost:3000',
-      ...(nodeEnv === 'development' ? ['http://localhost:3000'] : []),
+      'https://ai-chat-client-vkh3.onrender.com',
+      ...(nodeEnv === 'development' ? ['https://ai-chat-client-vkh3.onrender.com'] : []),
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
